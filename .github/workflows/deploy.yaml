@@ -1,0 +1,198 @@
+name: smoketest pipe
+
+env:
+  DOCKER_TST: oldbonedocker/react-tst
+  DOCKER_PRD: oldbonedocker/ebsprd
+
+on:
+  push:
+    branches:
+      - main
+      - feature/*
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+ 
+jobs:
+  git-leaks:
+    name: secrets detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Install depencies for test coverage
+        run: |
+          npm install
+      - name: App test and coverage
+        run:  CI=true npm run coverage
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  build:
+    name: docker_container_cicd_sast
+    needs:
+      - git-leaks
+      - sonarcloud
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        id: dockerbldtst
+      - run: >-
+          echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+      - run: docker build -t $DOCKER_TST -f Dockerfile.dev .
+      - run: docker run -e CI=true $DOCKER_TST npm test
+      - run: docker build -t $DOCKER_PRD .
+      - run: |
+             docker push $DOCKER_TST
+             docker push $DOCKER_PRD
+      - name: tstsast
+        id: sasttst
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "docker.io/oldbonedocker/react-tst"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL"
+      - name: prdsasttst
+        id: prdsasttst
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "docker.io/oldbonedocker/ebsprd"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL"
+
+  eb-cli-deploy:
+    needs:
+      - git-leaks
+      - sonarcloud
+      - build
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Python 3
+        id: pyinstall
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.12.0-alpha.5
+      - name: Install EB CLI using pip
+        id: pyvenv_ebscli_install
+        run: |
+          python -m pip install --upgrade pip
+          pip install awsebcli
+      - name: Init EB CLI
+        run: |
+           eb init ${{ secrets.EBS_DEPLOYMENT_ENV }}-$(date '+%Y%m%d')-${GITHUB_SHA:0:6} -p ${{ secrets.AWS_PLATFORM }} --region ${{ secrets.AWS_DEFAULT_REGION }}
+           eb create ${{ secrets.EBS_DEPLOYMENT_ENV }}-$(date '+%Y%m%d')-${GITHUB_SHA:0:6}
+           eb status --verbose
+      - name: Deploy to Elastic Beanstalk via cli
+        id: eb-cli-deploy
+        run: |
+          eb deploy ${{ secrets.EBS_DEPLOYMENT_ENV }}-$(date '+%Y%m%d')-${GITHUB_SHA:0:6} -l ${{ github.sha }}
+        #-l ${{ github.sha }}
+        # ${RELEASE_NAME}
+        #  eb deploy $EBS_ENV -l $EBS_ENV-${{ github.sha }} #fallback solution if partial sha is not working
+      - name: terminate environment
+        id: cleanup
+        run: eb terminate ${{ secrets.EBS_DEPLOYMENT_ENV }}-$(date '+%Y%m%d')-${GITHUB_SHA:0:6} --force
+        if: failure()
+
+  eb-deploy-githubactions:
+    runs-on: ubuntu-latest
+    needs:
+      - git-leaks
+      - sonarcloud
+      - build
+      - eb-cli-deploy
+    if: failure()
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v3
+      - name: Generate deployment package
+        run: zip -r deploy.zip . -x '*.git*' -x '*.elasticbeanstalk'
+
+      - name: Deploy to EB
+        uses: einaregilsson/beanstalk-deploy@v21
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_KEY }}
+          application_name: ${{ secrets.AWS_PLATFORM }}
+          environment_name: ${{ secrets.EBS_ENV2 }}
+          existing_bucket_name: ${{ secrets.EBS_S3_BUCKET }}
+          region: ${{ secrets.AWS_DEFAULT_REGION }}
+          version_label: ${{ github.run_number }}_${{ github.sha }}
+          version_description: ${{ github.event.repository.updated_at}}-${{ github.sha }}
+          deployment_package: deploy.zip
+          use_existing_version_if_available: true
+
+  eb-url-check:
+    needs:
+      - git-leaks
+      - sonarcloud
+      - build
+      - eb-cli-deploy
+      - eb-deploy-githubactions
+    if: needs.eb-cli-deploy.result == 'success' || needs.eb-deploy-githubactions.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Python 3
+        id: pynstall
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.12.0-alpha.5
+      - name: Install EB CLI using pip
+        id: pyvenv_ebscli_install
+        run: |
+          python -m pip install --upgrade pip
+          pip install awsebcli
+      - name: Retrieve environment URL
+        run: eb status --verbose
+        id: retrieve-url
+        shell: bash
+      - name: Store environment URL
+        run: echo "ENV_URL=$(cat $GITHUB_ENV)"
+        env:
+          ENV_URL: ${{ steps.retrieve-url.outputs.status}}
+#
+#  zap_scan:
+#    needs: [ build ]
+#    runs-on: ubuntu-latest
+#    name: Scan the webapplication
+#    steps:
+#      - name: ZAP Scan
+#        uses: zaproxy/action-full-scan@v0.4.0
+#        with:
+#          token: ${{ secrets.GITHUB_TOKEN }}
+#          docker_name: "owasp/zap2docker-stable"
+#          target: "http://${{ needs.ebsdeployment.outputs.service-url }}"
+#          rules_file_name: ".zap/rules.tsv"
+#          cmd_options: "-a"

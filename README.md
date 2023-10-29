@@ -1,87 +1,50 @@
-# Intro
-
-This is a project taken from the Udemy course docker-and-kubernetes-the-complete-guide.
-The purposes of the project are
- - apply the learned live
- - build a docker container
- - run npm audit
- - run a Trivy vulnerability scanner
- - run Snyk
- - deploy to AWS
-
-# Getting Started with Create React App
-
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
-
-
-## Available Scripts
-
-In the project directory, you can run:
-
-### `npm start`
-
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
-
-### Credits 
+# docker-react-nevergiveup
+a sandbox for fun, profit and enjoyment from correcting things while learning Dev---Ops
+## Credits
+This repo wouldn't have been possible without the touch of
 [https://github.com/stephengrinder/Docker-react](https://github.com/stephengrinder/Docker-react)
+The code in the repo is his and based upon the following
+course
+[https://www.udemy.com/course/docker-and-kubernetes-the-complete-guide](docker-and-kubernetes-the-complete-guide)
+If you want to learn more, don't be lazy and buy the course.
 
-This repo is for learning purposes
+I don't own any code, just attempted to make it a bit more secure by updating the needed images and packages to the best of my limited time and knowledge.
+Use the code on your own risk.
+
+## Architecture
+
+- A single-container deployment in Docker and AWS EBS consisting of:
+  - npm test container docker build for running CI tests
+  - docker prd build
+  - Docker CI github actions running code testing, building and testing the images and finally pushing the needed images to Dockerhub personal account registries.
+  - Trivy scan action
+  - Sonar cloud
+  - ZAP proxy
+  - AWS deployment action
+
+  ## Things to improve
+
+  - rework code to scan entire docker repos. Saw some samples, but too pushy to make things work in limited time.E.g. :
+  ```yaml
+  steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: "${{ secrets.DOCKER_NAMESPACE }}/${{ secrets.DOCKER_REPOSITORY }}:sha-XXXXXX"
+        format: "table"
+        exit-code: "1"
+        ignore-unfixed: true
+        vuln-type: "os,library"
+        severity: "CRITICAL,HIGH"
+  ```
+    - beware of the severity and adapt to your situation. The compromise between security and usability is a tough one.
+  - use less typing and better actions if possible. Comes with a steep learning curve. Try learning something new while $LIFE haunts you.
+  - make the app work with the latest version of npm packages. since I'm not a nodejs person, i rather put something online a bit more secure, rather than have the next script kiddy own me in seconds.
+
+  ## Some useful resources
+
+- [https://akx.github.io/travis-to-github-actions/](https://akx.github.io/travis-to-github-actions/)
+- [https://github.com/marketplace/actions/run-travis-yml](https://github.com/marketplace/actions/run-travis-yml)
+- [https://developer.okta.com/blog/2020/05/18/travis-ci-to-github-actions](https://developer.okta.com/blog/2020/05/18/travis-ci-to-github-actions)
+
+
