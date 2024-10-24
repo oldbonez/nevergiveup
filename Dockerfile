@@ -5,6 +5,6 @@ RUN apk update && apk upgrade && npm install && npm install -g npm-check-updates
 COPY . .
 RUN npm run build
 
-FROM nginx:1.25.3
+FROM nginx:1.26.2
 EXPOSE 80
 COPY --from=builder /app/build /usr/share/nginx/html
